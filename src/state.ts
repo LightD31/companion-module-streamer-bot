@@ -51,6 +51,17 @@ export class ModuleState {
 	/** Timestamp (ms) of the most recent event per `Source.Type`, used by the event flash feedback. */
 	readonly lastEventAt = new Map<string, number>()
 
+	/** Event types offered by the connected instance, keyed by source. Populated from `GetEvents`. */
+	eventCatalog: Record<string, string[]> = {}
+
+	/**
+	 * How many events of each `Source.Type` have been seen, keyed by the variable id they drive.
+	 *
+	 * Deliberately not cleared by {@link reset}: these counters are what Companion triggers watch
+	 * for a change, so resetting them on a reconnect would fire every trigger watching them.
+	 */
+	readonly eventCounts = new Map<string, number>()
+
 	reset(): void {
 		this.connected = false
 		this.authenticated = false
@@ -67,11 +78,15 @@ export class ModuleState {
 		}
 	}
 
-	noteEvent(source: string, type: string, timeStamp: string): void {
+	/** @returns the `Source.Type` key, which also keys {@link eventCounts} and {@link lastEventAt}. */
+	noteEvent(source: string, type: string, timeStamp: string): string {
+		const key = `${source}.${type}`
 		this.eventCount += 1
 		this.lastEventSource = source
 		this.lastEventType = type
 		this.lastEventTime = timeStamp
-		this.lastEventAt.set(`${source}.${type}`, Date.now())
+		this.lastEventAt.set(key, Date.now())
+		this.eventCounts.set(key, (this.eventCounts.get(key) ?? 0) + 1)
+		return key
 	}
 }

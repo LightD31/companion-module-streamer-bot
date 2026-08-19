@@ -23,6 +23,8 @@ and Streamer.bot pushes its events back, where they become Companion variables a
 - ~70 variables: connection and instance info, per-platform live state, viewer counts, broadcaster
   and bot accounts, and the latest chat message, follower, sub, gift sub, cheer, raid, reward
   redemption, donation, command, custom event and completed action
+- Optional counter variable per event type (`event_<source>_<type>`), declared from the connected
+  instance's event catalog so a Companion trigger can fire exactly once per matching event
 - Streamer.bot global variables mirrored as `$(streamer-bot:global_<name>)`, updated live
 - Feedbacks for connection state, stream live state, action enabled state, global variable
   comparisons, and a "recent event" flash

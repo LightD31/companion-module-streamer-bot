@@ -2,7 +2,7 @@ import { InstanceStatus } from '@companion-module/base'
 import { Logger, StreamerbotClient, type StreamerbotResponseTypes } from '@streamerbot/client'
 import type ModuleInstance from './main.js'
 import { errorMessage, firstOf, toVariableValue } from './util.js'
-import { eventVariableValues, globalVariableId } from './variables.js'
+import { eventVariableId, eventVariableValues, globalVariableId } from './variables.js'
 
 /** Shape of every event pushed by Streamer.bot; only the Twitch source is typed by the client. */
 export interface StreamerbotEventMessage {
@@ -121,6 +121,18 @@ export class StreamerbotConnection {
 			(async () => {
 				const response = await client.getBroadcaster()
 				if (response.status === 'ok') this.#applyBroadcaster(response.platforms)
+			})(),
+			(async () => {
+				// The catalog is what lets the event-counter variables be declared before the first
+				// matching event, so they can be picked in the trigger editor straight away.
+				const response = await client.getEvents()
+				if (response.status !== 'ok') return
+
+				const catalog: Record<string, string[]> = {}
+				for (const [source, types] of Object.entries(response.events as Record<string, readonly string[]>)) {
+					catalog[source] = [...types]
+				}
+				state.eventCatalog = catalog
 			})(),
 			this.refreshGlobals(),
 		])
@@ -315,11 +327,8 @@ export class StreamerbotConnection {
 			return
 		}
 
-		const sources = new Set(self.config.subscriptions ?? [])
-		// Global variable mirroring is driven by Misc.GlobalVariable* events.
-		if (self.config.syncGlobals) sources.add('Misc')
-
-		if (sources.size === 0) {
+		const sources = self.subscribedEventSources()
+		if (sources.length === 0) {
 			self.log('warn', 'No event sources selected; no variables or feedbacks will update from Streamer.bot')
 			return
 		}
@@ -333,13 +342,21 @@ export class StreamerbotConnection {
 		const type = payload?.event?.type ?? ''
 		if (!source || !type) return
 
-		self.state.noteEvent(source, type, payload.timeStamp ?? new Date().toISOString())
+		const eventKey = self.state.noteEvent(source, type, payload.timeStamp ?? new Date().toISOString())
 
 		if (self.config.logEvents) {
 			self.log('debug', `Event ${source}.${type}: ${toVariableValue(payload.data)}`)
 		}
 
 		const values = eventVariableValues(source, type, payload.data, self.state)
+
+		if (self.config.exposeEventVariables) {
+			const count = self.state.eventCounts.get(eventKey) ?? 0
+			// An event type outside the catalog, or from a source no longer subscribed, has no
+			// definition yet; declare it before publishing a value for it.
+			if (count === 1) self.refreshDefinitions()
+			values[eventVariableId(source, type)] = count
+		}
 
 		const globalsChanged =
 			source === 'Misc' && GLOBAL_EVENT_TYPES.has(type) && this.#applyGlobalEvent(type, payload.data)

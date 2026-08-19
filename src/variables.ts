@@ -1,5 +1,6 @@
 import type { CompanionVariableDefinitions, CompanionVariableValues } from '@companion-module/base'
 import { PLATFORMS, platformForSource } from './events.js'
+import type ModuleInstance from './main.js'
 import type { ModuleState } from './state.js'
 import { firstOf, sanitizeVariableId, toVariableValue } from './util.js'
 
@@ -84,8 +85,47 @@ export function globalVariableId(name: string): string {
 	return `global_${sanitizeVariableId(name)}`
 }
 
-export function buildVariableDefinitions(state: ModuleState): CompanionVariableDefinitions {
+/** Companion variable id for an event type's counter, e.g. `event_twitch_rewardredemption`. */
+export function eventVariableId(source: string, type: string): string {
+	return `event_${sanitizeVariableId(source)}_${sanitizeVariableId(type)}`
+}
+
+/** Split a `Source.Type` state key back into its parts. */
+function splitEventKey(key: string): [string, string] {
+	const index = key.indexOf('.')
+	return index < 0 ? [key, ''] : [key.slice(0, index), key.slice(index + 1)]
+}
+
+/**
+ * Every event-counter variable that should be defined, as `variableId -> Source.Type`.
+ *
+ * The catalog of the subscribed sources is declared up front so the variables can be picked in the
+ * trigger editor before the first matching event ever arrives. Anything already counted is added on
+ * top, so an event from a source that is no longer subscribed, or one missing from the catalog,
+ * still keeps a definition for the value it has.
+ */
+function eventVariableIds(self: ModuleInstance): Map<string, string> {
+	const ids = new Map<string, string>()
+	if (!self.config.exposeEventVariables) return ids
+
+	const catalog = self.state.eventCatalog
+	for (const source of self.subscribedEventSources()) {
+		for (const type of catalog[source] ?? []) {
+			ids.set(eventVariableId(source, type), `${source}.${type}`)
+		}
+	}
+
+	for (const key of self.state.eventCounts.keys()) {
+		const [source, type] = splitEventKey(key)
+		ids.set(eventVariableId(source, type), key)
+	}
+
+	return ids
+}
+
+export function buildVariableDefinitions(self: ModuleInstance): CompanionVariableDefinitions {
 	const definitions: CompanionVariableDefinitions = {}
+	const state = self.state
 
 	for (const [id, name] of Object.entries(STATIC_VARIABLES)) {
 		definitions[id] = { name }
@@ -102,11 +142,28 @@ export function buildVariableDefinitions(state: ModuleState): CompanionVariableD
 		definitions[globalVariableId(name)] = { name: `Global variable: ${name}` }
 	}
 
+	for (const [id, key] of eventVariableIds(self)) {
+		definitions[id] = { name: `Event count: ${key}` }
+	}
+
 	return definitions
 }
 
+/**
+ * A signature of the variable ids whose existence depends on runtime data.
+ *
+ * Comparing it lets the module re-send definitions only when the set actually changes, rather than
+ * on every data refresh.
+ */
+export function dynamicVariableSignature(self: ModuleInstance): string {
+	const globals = [...self.state.globals.keys()].sort().join(' ')
+	const events = [...eventVariableIds(self).keys()].sort().join(' ')
+	return `${globals}\n${events}`
+}
+
 /** Values derived purely from the current state, refreshed on connect and on data reloads. */
-export function stateVariableValues(state: ModuleState): CompanionVariableValues {
+export function stateVariableValues(self: ModuleInstance): CompanionVariableValues {
+	const state = self.state
 	const values: CompanionVariableValues = {
 		connected: state.connected,
 		authenticated: state.authenticated,
@@ -137,6 +194,12 @@ export function stateVariableValues(state: ModuleState): CompanionVariableValues
 
 	for (const [name, value] of state.globals) {
 		values[globalVariableId(name)] = toVariableValue(value)
+	}
+
+	// Seed every declared counter, so a variable never sits undefined and the first matching event
+	// registers as a 0 -> 1 change for anything triggering on it.
+	for (const [id, key] of eventVariableIds(self)) {
+		values[id] = state.eventCounts.get(key) ?? 0
 	}
 
 	return values

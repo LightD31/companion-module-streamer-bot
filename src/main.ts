@@ -7,11 +7,12 @@ import {
 import { UpdateActions, type ActionsSchema } from './actions.js'
 import { DEFAULT_CONFIG, GetConfigFields, type ModuleConfig, type ModuleSecrets } from './config.js'
 import { StreamerbotConnection } from './connection.js'
+import { EVENT_SOURCES } from './events.js'
 import { UpdateFeedbacks, type FeedbacksSchema } from './feedbacks.js'
 import { UpdatePresets } from './presets.js'
 import { ModuleState } from './state.js'
 import { UpgradeScripts } from './upgrades.js'
-import { buildVariableDefinitions, stateVariableValues } from './variables.js'
+import { buildVariableDefinitions, dynamicVariableSignature, stateVariableValues } from './variables.js'
 
 export type VariablesSchema = CompanionVariableValues
 
@@ -32,8 +33,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	readonly state = new ModuleState()
 	readonly connection = new StreamerbotConnection(this)
 
-	/** Cached so the variable definitions are only re-sent when the mirrored global set changes. */
-	#definedGlobals = ''
+	/** Cached so the variable definitions are only re-sent when the dynamic variable set changes. */
+	#definedSignature: string | undefined = undefined
 
 	constructor(internal: unknown) {
 		super(internal)
@@ -68,10 +69,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	/** Rebuild everything whose contents depend on data fetched from Streamer.bot. */
 	refreshDefinitions(): void {
-		const globalsKey = [...this.state.globals.keys()].sort().join(' ')
-		if (globalsKey !== this.#definedGlobals) {
-			this.#definedGlobals = globalsKey
-			this.setVariableDefinitions(buildVariableDefinitions(this.state))
+		const signature = dynamicVariableSignature(this)
+		if (signature !== this.#definedSignature) {
+			this.#definedSignature = signature
+			this.setVariableDefinitions(buildVariableDefinitions(this))
 		}
 
 		UpdateActions(this)
@@ -81,9 +82,27 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	/** Push the full set of state-derived variable values. */
 	syncStateVariables(): void {
-		const values = stateVariableValues(this.state)
+		const values = stateVariableValues(this)
 		values.connection_status = this.#connectionStatusText()
 		this.setVariableValues(values)
+	}
+
+	/**
+	 * The event sources this connection listens to.
+	 *
+	 * Used both to register the client's listeners and to decide which event-counter variables to
+	 * declare, so the two can never drift apart.
+	 */
+	subscribedEventSources(): string[] {
+		if (this.config.subscribeAll) {
+			const catalog = Object.keys(this.state.eventCatalog)
+			return catalog.length > 0 ? catalog : EVENT_SOURCES.slice()
+		}
+
+		const sources = new Set(this.config.subscriptions ?? [])
+		// Global variable mirroring is driven by Misc.GlobalVariable* events.
+		if (this.config.syncGlobals) sources.add('Misc')
+		return [...sources]
 	}
 
 	#connectionStatusText(): string {
