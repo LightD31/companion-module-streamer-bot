@@ -1,0 +1,28 @@
+{
+	"$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+	"type": "connection",
+	"id": "streamer-bot",
+	"name": "streamer-bot",
+	"shortname": "Streamer.bot",
+	"description": "Bidirectional control of Streamer.bot over its WebSocket Server: run actions and code triggers, send chat messages, read/write global variables, and receive events as Companion variables and feedbacks",
+	"version": "1.0.0",
+	"license": "MIT",
+	"repository": "git+https://github.com/LightD31/companion-module-streamer-bot.git",
+	"bugs": "https://github.com/LightD31/companion-module-streamer-bot/issues",
+	"maintainers": [
+		{
+			"name": "LightD31",
+			"github": "LightD31"
+		}
+	],
+	"runtime": {
+		"type": "node22",
+		"api": "nodejs-ipc",
+		"apiVersion": "2.1.3",
+		"entrypoint": "../dist/main.js"
+	},
+	"legacyIds": [],
+	"manufacturer": "Streamer.bot",
+	"products": ["Streamer.bot"],
+	"keywords": ["streaming", "twitch", "youtube", "kick", "trovo", "chat", "automation", "websocket"]
+}
