@@ -26,6 +26,7 @@ Authentication is required for the _Send chat message_ action; everything else w
 | Reconnect automatically            | Retries with a backoff while Streamer.bot is closed, and reconnects when it comes back |
 | Subscribe to all events            | Convenient, but a busy chat generates a lot of traffic                                 |
 | Event sources                      | The sources to subscribe to when not subscribing to everything                         |
+| Expose a variable per event type   | Adds one counter variable per event type, for use as a Companion trigger source        |
 | Log every received event           | Debug aid; writes each event and its payload to the Companion log                      |
 | Mirror global variables            | Exposes Streamer.bot globals as `$(streamer-bot:global_<name>)`                        |
 
@@ -96,12 +97,48 @@ Latest activity: `last_chat_user`, `last_chat_message`, `last_chat_user_id`, `la
 `last_command`, `last_command_user`, `last_custom_event`, `last_custom_event_data`,
 `last_action_run`, `last_action_completed`.
 
+With **Expose a variable per event type** enabled, each event type of every subscribed source also
+gets a counter named `event_<source>_<type>` (lowercased), for example
+`event_twitch_rewardredemption`. See _Triggering Companion from a Streamer.bot event_ above.
+
 Mirrored globals appear as `global_<name>`, lowercased with anything outside `a-z 0-9 _ -` replaced
 by `_` (so `deathCount` becomes `$(streamer-bot:global_deathcount)`).
 
 A variable only updates if you are subscribed to the event that carries it. Chat and follower
 variables need the **Twitch** source; mirrored globals need **Misc**, which is subscribed
 automatically whenever global mirroring is on.
+
+### Triggering Companion from a Streamer.bot event
+
+Companion triggers fire on a _variable change_, so to react to something happening in Streamer.bot
+you need a variable that changes every time that event arrives. Tick **Expose a variable per event
+type** in the connection config and each event type of every subscribed source gets a counter:
+
+```
+event_<source>_<type>        e.g. event_twitch_rewardredemption
+```
+
+The value counts how many of that event have arrived since Companion started. Then, in
+**Triggers → Add trigger**:
+
+- **Event:** _On variable change_ → `streamer-bot:event_twitch_rewardredemption`
+- **Actions:** whatever you want
+
+That fires exactly once per redemption, with no condition needed. The matching detail variables
+(`last_reward_name`, `last_reward_user`, `last_reward_input`, `last_reward_cost`) are set in the
+same update, so the trigger's actions can read them. To react to one specific reward, add the
+built-in _Variable: Check value_ condition comparing `$(streamer-bot:last_reward_name)`.
+
+A counter is used rather than a timestamp because two events of the same type can share a
+millisecond, which would leave the variable unchanged and the trigger silent. Counters are also
+kept across a reconnect: resetting them to zero would register as a change and fire every trigger
+watching them.
+
+The counters are declared from the event catalog reported by the connected instance, so they can be
+picked in the trigger editor before the first matching event ever arrives. That means one variable
+per event type of every subscribed source — roughly 200 with the default source selection, and
+around 460 if you tick _Subscribe to all events_. The option is off by default for that reason;
+narrowing **Event sources** is the way to keep the list small.
 
 ### Troubleshooting
 

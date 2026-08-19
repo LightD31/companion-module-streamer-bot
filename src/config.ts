@@ -10,6 +10,7 @@ export type ModuleConfig = {
 	autoReconnect: boolean
 	subscribeAll: boolean
 	subscriptions: string[]
+	exposeEventVariables: boolean
 	syncGlobals: boolean
 	globalsFilter: string
 	globalsPollInterval: number
@@ -32,6 +33,7 @@ export const DEFAULT_CONFIG: ModuleConfig = {
 	autoReconnect: true,
 	subscribeAll: false,
 	subscriptions: DEFAULT_EVENT_SOURCES,
+	exposeEventVariables: false,
 	syncGlobals: false,
 	globalsFilter: '',
 	globalsPollInterval: 0,
@@ -124,6 +126,19 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			default: DEFAULT_CONFIG.subscriptions,
 			choices: EVENT_SOURCE_CHOICES,
 			isVisibleExpression: '!$(options:subscribeAll)',
+		},
+		{
+			type: 'checkbox',
+			id: 'exposeEventVariables',
+			label: 'Expose a variable per event type',
+			width: 12,
+			default: DEFAULT_CONFIG.exposeEventVariables,
+			tooltip: 'Adds one counter variable per event type of the subscribed sources, for use as a trigger source',
+			description:
+				'Creates <code>event_&lt;source&gt;_&lt;type&gt;</code> variables that count how many of each event have arrived, ' +
+				'for example <code>event_twitch_rewardredemption</code>. A Companion trigger set to ' +
+				'<i>On variable change</i> for one of these fires exactly once per matching event. ' +
+				'This adds one variable per event type of every subscribed source, which is a few hundred if you subscribe broadly.',
 		},
 		{
 			type: 'checkbox',
